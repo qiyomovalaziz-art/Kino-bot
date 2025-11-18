@@ -13,7 +13,7 @@ logging.basicConfig(
 
 # Atrof-muhitdan sozlamalarni o'qish
 BOT_TOKEN = ("8328030300:AAEfF3n6S1UVKttTqNGHY2GtPYqNKM2AOmE")
-ADMIN_CHAT_ID = int(os.getenv("7973934849"))
+ADMIN_CHAT_ID = ("7973934849"))
 DB_PATH = "kinolar.db"
 
 # Ma'lumotlar bazasini yaratish

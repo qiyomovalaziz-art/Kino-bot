@@ -10,7 +10,7 @@ def init_db():
         cursor = conn.cursor()
         cursor.execute("""
             CREATE TABLE kinolar (
-                kod TEXT PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 file_id TEXT NOT NULL,
                 file_type TEXT NOT NULL
             )
@@ -18,18 +18,19 @@ def init_db():
         conn.commit()
         conn.close()
 
-def saqla_kino(kod: str, file_id: str, file_type: str):
+def saqla_kino(file_id: str, file_type: str) -> int:
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO kinolar (kod, file_id, file_type) VALUES (?, ?, ?)",
-                   (kod, file_id, file_type))
+    cursor.execute("INSERT INTO kinolar (file_id, file_type) VALUES (?, ?)", (file_id, file_type))
+    kino_id = cursor.lastrowid
     conn.commit()
     conn.close()
+    return kino_id
 
-def olish_kino(kod: str):
+def olish_kino(kino_id: int):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT file_id, file_type FROM kinolar WHERE kod = ?", (kod,))
+    cursor.execute("SELECT file_id, file_type FROM kinolar WHERE id = ?", (kino_id,))
     result = cursor.fetchone()
     conn.close()
-    return result  # (file_id, file_type) yoki None
+    return result

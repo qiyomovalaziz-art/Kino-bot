@@ -11,9 +11,9 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# Atrof-muhitdan sozlamalarni o'qish
-BOT_TOKEN = ("8328030300:AAEfF3n6S1UVKttTqNGHY2GtPYqNKM2AOmE")
-ADMIN_CHAT_ID = ("7973934849"))
+# Sozlamalarni to'g'ridan-to'g'ri o'rnatish (GitHubga yuklaganda ehtimoliy xavfli!)
+BOT_TOKEN = "8328030300:AAEfF3n6S1UVKttTqNGHY2GtPYqNKM2AOmE"
+ADMIN_CHAT_ID = 7973934849  # Son sifatida — qavssiz!
 DB_PATH = "kinolar.db"
 
 # Ma'lumotlar bazasini yaratish
@@ -108,7 +108,7 @@ async def raqamni_tekshir(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Asosiy funksiya
 def main():
     if not BOT_TOKEN or not ADMIN_CHAT_ID:
-        raise ValueError("BOT_TOKEN va ADMIN_CHAT_ID muhit o'zgaruvchilari kerak!")
+        raise ValueError("BOT_TOKEN va ADMIN_CHAT_ID sozlanmagan!")
 
     init_db()
     app = Application.builder().token(BOT_TOKEN).build()

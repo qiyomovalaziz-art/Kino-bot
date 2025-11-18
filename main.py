@@ -1,35 +1,68 @@
 # main.py
+import os
 import logging
-import secrets
 from telegram import Update, Message
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from config import BOT_TOKEN, ADMIN_CHAT_ID
-from database import init_db, saqla_kino, olish_kino
+import sqlite3
 
+# Log sozlamalari
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-# Bot ishga tushganda DB ni yaratish
-init_db()
+# Atrof-muhitdan sozlamalarni o'qish
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID"))
+DB_PATH = "kinolar.db"
+
+# Ma'lumotlar bazasini yaratish
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS kinolar (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id TEXT NOT NULL,
+            file_type TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+# Kinoni saqlash
+def saqla_kino(file_id: str, file_type: str) -> int:
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO kinolar (file_id, file_type) VALUES (?, ?)", (file_id, file_type))
+    kino_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return kino_id
+
+# Kinoni ID bo'yicha olish
+def olish_kino(kino_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT file_id, file_type FROM kinolar WHERE id = ?", (kino_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result
 
 # /start buyrug'i
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🎬 Salom! Kinoning kodini yuboring — men uni sizga ko'rsataman!\n"
-        "Masalan: `KINO123`"
+        "🎬 Salom! Kinoning **raqamini** yuboring — men uni ko'rsataman!\n"
+        "Masalan: `123`"
     )
 
-# Admin kinoni yuborganda
-async def admin_kino_qabul_qil(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Admin kino yuborganda
+async def admin_kino_qabul(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id != ADMIN_CHAT_ID:
         return  # Faqat admin
 
     message: Message = update.message
-    kod = secrets.token_urlsafe(6).upper()[:6]  # 6 ta tasodifiy harf/raqam, masalan: A3B9K1
-
     file_id = None
     file_type = None
 
@@ -40,27 +73,27 @@ async def admin_kino_qabul_qil(update: Update, context: ContextTypes.DEFAULT_TYP
         file_id = message.document.file_id
         file_type = "document"
     elif message.photo:
-        # Eng yuqori sifatli rasm
         file_id = message.photo[-1].file_id
         file_type = "photo"
     else:
-        await message.reply_text("⚠️ Faqat video, foto yoki fayl yuboring.")
+        await message.reply_text("⚠️ Faqat video, rasm yoki hujjat yuboring.")
         return
 
     if file_id:
-        saqla_kino(kod, file_id, file_type)
-        await message.reply_text(f"✅ Kino saqlandi!\nKod: `{kod}`", parse_mode="Markdown")
+        kino_id = saqla_kino(file_id, file_type)
+        await message.reply_text(f"✅ Kino saqlandi!\nRaqami: `{kino_id}`", parse_mode="Markdown")
 
-# Foydalanuvchi kod yuborganda
-async def kodni_tekshir(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip().upper()
-    
-    # Kod 3-10 ta harf/raqamdan iborat bo'lishi mumkin
-    if not (3 <= len(text) <= 10) or not text.isalnum():
-        await update.message.reply_text("❌ Kod noto'g'ri. Iltimos, to'g'ri kod yuboring.")
+# Foydalanuvchi raqam yuborganda
+async def raqamni_tekshir(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+
+    if not text.isdigit():
+        await update.message.reply_text("❌ Iltimos, faqat raqam yuboring (masalan: 123).")
         return
 
-    kino = olish_kino(text)
+    kino_id = int(text)
+    kino = olish_kino(kino_id)
+
     if kino:
         file_id, file_type = kino
         if file_type == "video":
@@ -70,18 +103,22 @@ async def kodni_tekshir(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif file_type == "document":
             await update.message.reply_document(document=file_id)
     else:
-        await update.message.reply_text("❌ Bunday kodli kino topilmadi.")
+        await update.message.reply_text("❌ Bunday raqamli kino topilmadi.")
 
 # Asosiy funksiya
 def main():
+    if not BOT_TOKEN or not ADMIN_CHAT_ID:
+        raise ValueError("BOT_TOKEN va ADMIN_CHAT_ID muhit o'zgaruvchilari kerak!")
+
+    init_db()
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(
         filters.VIDEO | filters.PHOTO | filters.Document.ALL,
-        admin_kino_qabul_qil
+        admin_kino_qabul
     ))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, kodni_tekshir))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, raqamni_tekshir))
 
     print("✅ Bot ishga tushdi!")
     app.run_polling()

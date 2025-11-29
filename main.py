@@ -1,22 +1,28 @@
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-    ConversationHandler
-)
 import requests
-from datetime import datetime
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryandler, ContextTypes
 
-# Logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+# Logging sozlamalari
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
-# Holatlar
-ASK_CITY = 1
+# 10 ta islom mamlakati: (bayroq, nomi, shahar)
+ISLAMIC_COUNTRIES = [
+    ("🇸🇦", "Saudiya Arabistoni", "Riyadh"),
+    ("🇵🇰", "Pakistan", "Islamabad"),
+    ("🇮🇩", "Indoneziya", "Jakarta"),
+    ("🇹🇷", "Turkiya", "Istanbul"),
+    ("🇪🇬", "Misr", "Cairo"),
+    ("🇺🇿", "Oʻzbekiston", "Tashkent"),
+    ("🇲🇦", "Marokash", "Rabat"),
+    ("🇮🇷", "Eron", "Tehran"),
+    ("🇧🇩", "Bangladesh", "Dhaka"),
+    ("🇦🇪", "BAA", "Dubai"),
+]
 
 # Namoz turlari uchun rakatlar
 NAMOZ_RAKATLAR = {
@@ -27,98 +33,109 @@ NAMOZ_RAKATLAR = {
     "Isha": "4 sunnat, 4 farz, 2 sunnat, 2 nafl, 3 vitr"
 }
 
+# Asosiy menyuni yaratish
+def build_country_keyboard():
+    buttons = []
+    for i in range(0, len(ISLAMIC_COUNTRIES), 2):
+        row = []
+        flag1, name1, _ = ISLAMIC_COUNTRIES[i]
+        row.append(InlineKeyboardButton(f"{flag1} {name1}", callback_data=f"prayer_{i}"))
+        if i + 1 < len(ISLAMIC_COUNTRIES):
+            flag2, name2, _ = ISLAMIC_COUNTRIES[i + 1]
+            row.append(InlineKeyboardButton(f"{flag2} {name2}", callback_data=f"prayer_{i+1}"))
+        buttons.append(row)
+    return InlineKeyboardMarkup(buttons)
+
 # /start komandasi
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("🕋 Namoz vaqtlarini ko'rsat", callback_data='show_prayer')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    keyboard = build_country_keyboard()
     await update.message.reply_text(
-        "Assalomu alaykum! 🌙\nNamoz vaqtlari, sanasi, sovat vaqtlari hamda har bir namozning necha rakat ekanligini bilish uchun tugmani bosing:",
-        reply_markup=reply_markup
+        "🌙 Assalomu alaykum! Quyidagi islom mamlakatlaridan birini tanlang:",
+        reply_markup=keyboard
     )
 
-# Callback tugmalar
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Namoz ma'lumotlarini olish
+def get_prayer_times(city):
+    url = f"http://api.aladhan.com/v1/timingsByCity?city={city}&method=2"
+    response = requests.get(url, timeout=10)
+    data = response.json()
+    if data["code"] != 200:
+        raise Exception("Ma'lumot topilmadi")
+    return data["data"]
+
+# Tugma bosilganda
+async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if query.data == 'show_prayer':
-        await query.edit_message_text("Shahringizni yoki mamlakatingizni kiriting (masalan: Toshkent, Jidda, Istanbul):")
-        return ASK_CITY
-
-# Shahar nomini qabul qilish
-async def get_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    city = update.message.text.strip()
-    url = f"http://api.aladhan.com/v1/timingsByCity?city={city}&country=&method=2"
-
-    try:
-        response = requests.get(url, timeout=10)
-        data = response.json()
-
-        if data['code'] != 200 or 'data' not in data:
-            await update.message.reply_text("Kechirasiz, ushbu shahar topilmadi. Iltimos, to'g'ri shahar nomini kiriting.")
-            return ASK_CITY
-
-        timings = data['data']['timings']
-        date_info = data['data']['date']['gregorian']
-        hijri = data['data']['date']['hijri']
-
-        # Sana
-        greg_date = f"{date_info['day']} {date_info['month']['en']} {date_info['year']}"
-        hijri_date = f"{hijri['day']} {hijri['month']['en']} {hijri['year']} (Hijriy)"
-
-        # Iftorlik va Saharlik
-        saharlik = timings['Imsak']
-        iftorlik = timings['Maghrib']
-
-        # Ma'lumotlarni tuzish
-        message = (
-            f"📅 **Sana (Milodiy):** {greg_date}\n"
-            f"📅 **Sana (Hijriy):** {hijri_date}\n\n"
-            f"🕋 **Namoz vaqtlari:**\n"
-            f"🔹 **Bomdod (Fajr):** {timings['Fajr']} — {NAMOZ_RAKATLAR['Fajr']}\n"
-            f"🔹 **Peshin (Dhuhr):** {timings['Dhuhr']} — {NAMOZ_RAKATLAR['Dhuhr']}\n"
-            f"🔹 **Asr:** {timings['Asr']} — {NAMOZ_RAKATLAR['Asr']}\n"
-            f"🔹 **Shom (Maghrib):** {timings['Maghrib']} — {NAMOZ_RAKATLAR['Maghrib']}\n"
-            f"🔹 **Xufton (Isha):** {timings['Isha']} — {NAMOZ_RAKATLAR['Isha']}\n\n"
-            f"🌙 **Saharlik (Imsak):** {saharlik}\n"
-            f"🍽️ **Iftorlik:** {iftorlik}\n\n"
-            f"📍 **Shahar:** {city}"
+    if query.data == "back_to_menu":
+        keyboard = build_country_keyboard()
+        await query.edit_message_text(
+            "🌙 Quyidagi islom mamlakatlaridan birini tanlang:",
+            reply_markup=keyboard
         )
+        return
 
-        await update.message.reply_text(message, parse_mode='Markdown')
+    if query.data.startswith("prayer_"):
+        try:
+            index = int(query.data.split("_")[1])
+            flag, country, city = ISLAMIC_COUNTRIES[index]
+        except (IndexError, ValueError, IndexError):
+            await query.edit_message_text("⚠️ Noto'g'ri tanlov.")
+            return
 
-    except Exception as e:
-        logger.error(f"Xatolik: {e}")
-        await update.message.reply_text("Namoz vaqtlarini olishda xatolik yuz berdi. Iltimos, keyinroq qaytadan urinib ko'ring.")
+        # "Yuklanmoqda..." xabari
+        await query.edit_message_text("⏳ Ma'lumot yuklanmoqda... Iltimos, kuting.")
 
-    return ConversationHandler.END
+        try:
+            prayer_data = get_prayer_times(city)
+            timings = prayer_data["timings"]
+            greg = prayer_data["date"]["gregorian"]
+            hijri = prayer_data["date"]["hijri"]
 
-# Bekor qilish
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Jarayon bekor qilindi.")
-    return ConversationHandler.END
+            greg_date = f"{greg['day']} {greg['month']['en']} {greg['year']}"
+            hijri_date = f"{hijri['day']} {hijri['month']['en']} {hijri['year']} (Hijriy)"
 
-# Asosiy funksiya
+            msg = (
+                f"📍 **{flag} {country}** ({city})\n\n"
+                f"📅 **Sana (Milodiy):** {greg_date}\n"
+                f"📅 **Sana (Hijriy):** {hijri_date}\n\n"
+                f"🕋 **Namoz vaqtlari:**\n"
+                f"🔹 **Bomdod (Fajr):** {timings['Fajr']} — {NAMOZ_RAKATLAR['Fajr']}\n"
+                f"🔹 **Peshin (Dhuhr):** {timings['Dhuhr']} — {NAMOZ_RAKATLAR['Dhuhr']}\n"
+                f"🔹 **Asr:** {timings['Asr']} — {NAMOZ_RAKATLAR['Asr']}\n"
+                f"🔹 **Shom (Maghrib):** {timings['Maghrib']} — {NAMOZ_RAKATLAR['Maghrib']}\n"
+                f"🔹 **Xufton (Isha):** {timings['Isha']} — {NAMOZ_RAKATLAR['Isha']}\n\n"
+                f"🌙 **Saharlik (Imsak):** {timings['Imsak']}\n"
+                f"🍽️ **Iftorlik:** {timings['Maghrib']}"
+            )
+
+            # Tugmalar: "🔄 Yangilash" va "⬅️ Orqaga"
+            refresh_button = InlineKeyboardButton("🔄 Yangilash", callback_data=f"prayer_{index}")
+            back_button = InlineKeyboardButton("⬅️ Orqaga", callback_data="back_to_menu")
+            reply_markup = InlineKeyboardMarkup([[refresh_button, back_button]])
+
+            await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=reply_markup)
+
+        except Exception as e:
+            logger.error(f"API xatosi: {e}")
+            await query.edit_message_text(
+                "❌ Namoz vaqtlarini olishda xatolik yuz berdi.\n\n"
+                "Iltimos, keyinroq qaytadan urinib ko'ring yoki boshqa mamlakatni tanlang:",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Bosh sahifaga qaytish", callback_data="back_to_menu")]])
+            )
+
+# Asosiy dastur
 def main():
-    # 🔑 Bu yerga o'zingizning bot tokeningizni qo'ying
     TOKEN = "8581071094:AAF7qK3vVOn8YUJTrlc-JEGPX3SXw5wJMoA"
 
     app = Application.builder().token(TOKEN).build()
 
-    conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(button_handler)],
-        states={
-            ASK_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_city)],
-        },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        per_chat=True
-    )
-
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(conv_handler)
+    app.add_handler(CallbackQueryHandler(handle_button))
 
-    print("Bot ishga tushdi...")
+    print("✅ Bot muvaffaqiyatli ishga tushdi! Telegramda /start buyrug'ini yuboring.")
     app.run_polling()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

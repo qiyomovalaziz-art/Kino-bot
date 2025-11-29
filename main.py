@@ -101,7 +101,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Asosiy funksiya
 def main():
     # 🔑 Bu yerga o'zingizning bot tokeningizni qo'ying
-    TOKEN = "BU_YERGA_TOKENINGIZNI_QO'YING"
+    TOKEN = "8581071094:AAF7qK3vVOn8YUJTrlc-JEGPX3SXw5wJMoA"
 
     app = Application.builder().token(TOKEN).build()
 

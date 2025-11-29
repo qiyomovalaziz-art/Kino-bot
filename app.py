@@ -1,121 +1,136 @@
-import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-    CallbackQueryHandler
-)
-from database import init_db, add_user, get_user_count, add_movie, get_movie_by_code
+import os
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from dotenv import load_dotenv
 
-# === Sozlamalar ===
-BOT_TOKEN = "8328030300:AAEfF3n6S1UVKttTqNGHY2GtPYqNKM2AOmE"
-ADMIN_ID = 7973934849
+load_dotenv()
+BOT_TOKEN = os.getenv("8363852555:AAHb5q3veKioUh2zNMV_9EEbgvoQqOMldIg")
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN muhit o'zgaruvchisi sozlanmagan!")
 
-# === Boshlang'ich sozlamalar ===
+# 📅 2025-yil uchun Ramazon boshlanish sanasi (astronomik taxmin — 28-fevral ko'pincha ishonchli)
+# Barcha mamlakatlar uchun bir xil sana qo'llaniladi (haqiqatda 1 kun farq qilishi mumkin)
+RAMADAN_2025 = "2025-02-28"
+
+# 🌍 OIC (Islom Hamkorligi Tashkiloti) a'zolaridan 49 ta mamlakat
+# Manba: https://www.oic-oci.org/member-states/
+MUSLIM_COUNTRIES = [
+    {"name": "Saudi Arabia", "code": "SA", "flag": "🇸🇦"},
+    {"name": "Uzbekistan", "code": "UZ", "flag": "🇺🇿"},
+    {"name": "Indonesia", "code": "ID", "flag": "🇮🇩"},
+    {"name": "Pakistan", "code": "PK", "flag": "🇵🇰"},
+    {"name": "Turkey", "code": "TR", "flag": "🇹🇷"},
+    {"name": "Egypt", "code": "EG", "flag": "🇪🇬"},
+    {"name": "Iran", "code": "IR", "flag": "🇮🇷"},
+    {"name": "Morocco", "code": "MA", "flag": "🇲🇦"},
+    {"name": "Malaysia", "code": "MY", "flag": "🇲🇾"},
+    {"name": "United Arab Emirates", "code": "AE", "flag": "🇦🇪"},
+    {"name": "Qatar", "code": "QA", "flag": "🇶🇦"},
+    {"name": "Kuwait", "code": "KW", "flag": "🇰🇼"},
+    {"name": "Oman", "code": "OM", "flag": "🇴🇲"},
+    {"name": "Bahrain", "code": "BH", "flag": "🇧🇭"},
+    {"name": "Bangladesh", "code": "BD", "flag": "🇧🇩"},
+    {"name": "Nigeria", "code": "NG", "flag": "🇳🇬"},
+    {"name": "Algeria", "code": "DZ", "flag": "🇩🇿"},
+    {"name": "Sudan", "code": "SD", "flag": "🇸🇩"},
+    {"name": "Iraq", "code": "IQ", "flag": "🇮🇶"},
+    {"name": "Afghanistan", "code": "AF", "flag": "🇦🇫"},
+    {"name": "Yemen", "code": "YE", "flag": "🇾🇪"},
+    {"name": "Syria", "code": "SY", "flag": "🇸🇾"},
+    {"name": "Jordan", "code": "JO", "flag": "🇯🇴"},
+    {"name": "Lebanon", "code": "LB", "flag": "🇱🇧"},
+    {"name": "Palestine", "code": "PS", "flag": "🇵🇸"},
+    {"name": "Tunisia", "code": "TN", "flag": "🇹🇳"},
+    {"name": "Libya", "code": "LY", "flag": "🇱🇾"},
+    {"name": "Senegal", "code": "SN", "flag": "🇸🇳"},
+    {"name": "Mali", "code": "ML", "flag": "🇲🇱"},
+    {"name": "Niger", "code": "NE", "flag": "🇳🇪"},
+    {"name": "Chad", "code": "TD", "flag": "🇹🇩"},
+    {"name": "Somalia", "code": "SO", "flag": "🇸🇴"},
+    {"name": "Djibouti", "code": "DJ", "flag": "🇩🇯"},
+    {"name": "Comoros", "code": "KM", "flag": "🇰🇲"},
+    {"name": "Mauritania", "code": "MR", "flag": "🇲🇷"},
+    {"name": "Brunei", "code": "BN", "flag": "🇧🇳"},
+    {"name": "Maldives", "code": "MV", "flag": "🇲🇻"},
+    {"name": "Guinea", "code": "GN", "flag": "🇬🇳"},
+    {"name": "Sierra Leone", "code": "SL", "flag": "🇸🇱"},
+    {"name": "Gambia", "code": "GM", "flag": "🇬🇲"},
+    {"name": "Guinea-Bissau", "code": "GW", "flag": "🇬🇼"},
+    {"name": "Burkina Faso", "code": "BF", "flag": "🇧🇫"},
+    {"name": "Benin", "code": "BJ", "flag": "🇧🇯"},
+    {"name": "Togo", "code": "TG", "flag": "🇹🇬"},
+    {"name": "Gabon", "code": "GA", "flag": "🇬🇦"},
+    {"name": "Cameroon", "code": "CM", "flag": "🇨🇲"},
+    {"name": "Central African Republic", "code": "CF", "flag": "🇨🇫"},
+    {"name": "Mozambique", "code": "MZ", "flag": "🇲🇿"},
+    {"name": "Uganda", "code": "UG", "flag": "🇺🇬"},
+]
+
+# Sahifadagi mamlakat soni
+PAGE_SIZE = 5
+
+def build_keyboard(page: int = 0):
+    start = page * PAGE_SIZE
+    end = start + PAGE_SIZE
+    batch = MUSLIM_COUNTRIES[start:end]
+
+    # Bayroq + nom tugmalari
+    buttons = [
+        [InlineKeyboardButton(f"{c['flag']} {c['name']}", callback_data=f"country_{c['code']}")]
+        for c in batch
+    ]
+
+    # Navigatsiya tugmalari (pastda)
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton("⬅️ Oldingisi", callback_data=f"page_{page-1}"))
+    if end < len(MUSLIM_COUNTRIES):
+        nav_row.append(InlineKeyboardButton("➡️ Keyingisi", callback_data=f"page_{page+1}"))
+    
+    if nav_row:
+        buttons.append(nav_row)
+
+    return InlineKeyboardMarkup(buttons)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    add_user(user.id, user.username)
     await update.message.reply_text(
-        "Assalomu alaykum! 🎬\n"
-        "Kinoni ko'rish uchun uning *raqamli kodini* yuboring.",
-        parse_mode='Markdown'
+        "🌙 Assalomu alaykum! Quyidagi musulmon mamlakatlaridan birini tanlang, "
+        "2025-yilda Ramazon oyi qachon boshlanishini bilib oling:",
+        reply_markup=build_keyboard(page=0)
     )
 
-# === Admin panel ===
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("Siz admin emassiz!")
-        return
-
-    keyboard = [
-        [InlineKeyboardButton("➕ Kino qo'shish", callback_data='add_movie')],
-        [InlineKeyboardButton("📊 Statistika", callback_data='stats')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Admin panel:", reply_markup=reply_markup)
-
-# === Callbacklar ===
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    data = query.data
 
-    if query.data == 'add_movie':
-        context.user_data['state'] = 'waiting_for_code'
-        await query.edit_message_text("Kino uchun *raqamli kod*ni yuboring:", parse_mode='Markdown')
-
-    elif query.data == 'stats':
-        count = get_user_count()
-        await query.edit_message_text(f"👥 Botdan foydalanuvchilar soni: {count}")
-
-# === Xabarlar ===
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    text = update.message.text
-
-    # Foydalanuvchi kino kodini yubordi
-    if not context.user_data.get('state') and not text.startswith('/'):
-        movie = get_movie_by_code(text)
-        if movie:
-            file_id, title = movie
-            await update.message.reply_video(file_id, caption=f"🎬 *{title}*", parse_mode='Markdown')
+    if data.startswith("country_"):
+        code = data.split("_", 1)[1]
+        country = next((c for c in MUSLIM_COUNTRIES if c["code"] == code), None)
+        if country:
+            msg = (
+                f"🌙 *{country['name']}* davlati uchun Ramazon 2025:\n"
+                f"📅 Boshlanish sanasi: *{RAMADAN_2025}*\n\n"
+                "⚠️ Eslatma: Haqiqiy sana hilol kuzatish natijasiga qarab 1 kun oldin yoki keyin bo'lishi mumkin."
+            )
+            await query.edit_message_text(msg, parse_mode="Markdown")
         else:
-            await update.message.reply_text("⚠️ Bunday kodli kino topilmadi. Iltimos, to'g'ri kodni kiriting.")
-        return
+            await query.edit_message_text("❌ Mamlakat topilmadi.")
 
-    # Admin kino qo'shish jarayoni
-    if user_id == ADMIN_ID:
-        state = context.user_data.get('state')
+    elif data.startswith("page_"):
+        page = int(data.split("_", 1)[1])
+        await query.edit_message_text(
+            "🌙 Musulmon mamlakatni tanlang:",
+            reply_markup=build_keyboard(page=page)
+        )
 
-        if state == 'waiting_for_code':
-            if not text.isdigit():
-                await update.message.reply_text("⚠️ Kod faqat raqamlardan iborat bo'lishi kerak!")
-                return
-            context.user_data['code'] = text
-            context.user_data['state'] = 'waiting_for_title'
-            await update.message.reply_text("Kino nomini yuboring:")
-
-        elif state == 'waiting_for_title':
-            context.user_data['title'] = text
-            context.user_data['state'] = 'waiting_for_file'
-            await update.message.reply_text("Endi kinoning *video faylini* yuboring:", parse_mode='Markdown')
-
-        elif state == 'waiting_for_file':
-            if not update.message.video:
-                await update.message.reply_text("⚠️ Iltimos, faqat *video* yuboring!", parse_mode='Markdown')
-                return
-
-            code = context.user_data['code']
-            title = context.user_data['title']
-            file_id = update.message.video.file_id
-
-            try:
-                add_movie(code, title, file_id)
-                await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi!\nKod: `{code}`", parse_mode='Markdown')
-            except Exception as e:
-                await update.message.reply_text(f"❌ Xatolik yuz berdi: {e}")
-            finally:
-                context.user_data.clear()
-
-# === Asosiy funksiya ===
 def main():
-    init_db()
     app = Application.builder().token(BOT_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("admin", admin_panel))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.ALL, handle_message))
-
+    app.add_handler(CallbackQueryHandler(handle_button))
+    print("✅ Bot ishga tushdi! Railwayda ishlayapti.")
     app.run_polling()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

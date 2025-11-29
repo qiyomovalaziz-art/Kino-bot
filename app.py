@@ -7,7 +7,7 @@ from astral.sun import sun
 import pytz
 
 # 🔑 SIZNING BOT TOKENINGIZ — O'RNIGA @BotFather dan olganningizni qo'ying
-BOT_TOKEN = "8363852555:AAHb5q3veKioUh2zNMV_9EEbgvoQqOMldIg"
+BOT_TOKEN = "8581071094:AAF7qK3vVOn8YUJTrlc-JEGPX3SXw5wJMoA"
 
 # 📅 Ramazon 2025 boshlanish sanasi (astronomik taxmin)
 RAMADAN_2025 = "2025-02-28"

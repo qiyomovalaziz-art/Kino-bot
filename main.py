@@ -6,13 +6,13 @@ from astral import LocationInfo
 from astral.sun import sun
 import pytz
 
-# 🔑 Sizning bot tokeningiz (GitHubga ochiq qo'yish xavfli — Railwayda Environment Variable qiling yaxshiroq)
+# 🔑 SIZNING BOT TOKENINGIZ — O'RNIGA @BotFather dan olganningizni qo'ying
 BOT_TOKEN = "8363852555:AAHb5q3veKioUh2zNMV_9EEbgvoQqOMldIg"
 
 # 📅 Ramazon 2025 boshlanish sanasi (astronomik taxmin)
 RAMADAN_2025 = "2025-02-28"
 
-# 🌍 10 ta asosiy musulmon mamlakat (ko'proq qo'shish mumkin)
+# 🌍 15 ta asosiy musulmon mamlakat (ko'proq qo'shish mumkin)
 COUNTRIES = [
     {"name": "Saudi Arabia", "code": "SA", "flag": "🇸🇦", "city": "Mecca", "lat": 21.4225, "lon": 39.8262, "tz": "Asia/Riyadh"},
     {"name": "Uzbekistan", "code": "UZ", "flag": "🇺🇿", "city": "Tashkent", "lat": 41.2995, "lon": 69.2401, "tz": "Asia/Tashkent"},
@@ -24,6 +24,11 @@ COUNTRIES = [
     {"name": "Morocco", "code": "MA", "flag": "🇲🇦", "city": "Rabat", "lat": 34.0209, "lon": -6.8416, "tz": "Africa/Casablanca"},
     {"name": "Malaysia", "code": "MY", "flag": "🇲🇾", "city": "Kuala Lumpur", "lat": 3.1390, "lon": 101.6869, "tz": "Asia/Kuala_Lumpur"},
     {"name": "United Arab Emirates", "code": "AE", "flag": "🇦🇪", "city": "Dubai", "lat": 25.2048, "lon": 55.2708, "tz": "Asia/Dubai"},
+    {"name": "Qatar", "code": "QA", "flag": "🇶🇦", "city": "Doha", "lat": 25.2854, "lon": 51.5310, "tz": "Asia/Qatar"},
+    {"name": "Kuwait", "code": "KW", "flag": "🇰🇼", "city": "Kuwait City", "lat": 29.3759, "lon": 47.9774, "tz": "Asia/Kuwait"},
+    {"name": "Bangladesh", "code": "BD", "flag": "🇧🇩", "city": "Dhaka", "lat": 23.8103, "lon": 90.4125, "tz": "Asia/Dhaka"},
+    {"name": "Nigeria", "code": "NG", "flag": "🇳🇬", "city": "Abuja", "lat": 9.0765, "lon": 7.3986, "tz": "Africa/Lagos"},
+    {"name": "Algeria", "code": "DZ", "flag": "🇩🇿", "city": "Algiers", "lat": 36.7538, "lon": 3.0588, "tz": "Africa/Algiers"},
 ]
 
 PAGE_SIZE = 5
@@ -49,30 +54,21 @@ def build_keyboard(page: int = 0):
 
 def calculate_prayer_times(lat, lon, tz_name):
     try:
-        # Vaqt zonasini olish
         tz = pytz.timezone(tz_name)
         today = datetime.now(tz).date()
-        
-        # Astral Location
         city = LocationInfo("Custom", "Region", tz_name, lat, lon)
-        
-        # Quyosh hodisalari
         s = sun(city.observer, date=today, tzinfo=tz)
         
         sunrise = s['sunrise']
         sunset = s['sunset']
         noon = s['noon']
         
-        # 🌙 Bomdod: Quyosh chiqishidan 1 soat oldin (soddalashtirilgan)
-        fajr = sunrise - timedelta(hours=1)
-        # 🌞 Peshin: Quyosh tepada
+        # Soddalashtirilgan namoz vaqtlari (haqiqiyga yaqin taxmin)
+        fajr = sunrise - timedelta(minutes=70)   # ~1 soat 10 daqiqqa oldin
         dhuhr = noon
-        # 🌤 Asr: Peshindan keyin ~3 soat (taxmin)
         asr = noon + timedelta(hours=3)
-        # 🌆 Shom: Quyosh botganda
         maghrib = sunset
-        # 🌃 Xufton: Shomdan 1.5 soat keyin
-        isha = sunset + timedelta(hours=1.5)
+        isha = sunset + timedelta(minutes=90)    # 1.5 soat keyin
         
         return {
             "Fajr": fajr.strftime("%H:%M"),
@@ -82,7 +78,7 @@ def calculate_prayer_times(lat, lon, tz_name):
             "Maghrib": maghrib.strftime("%H:%M"),
             "Isha": isha.strftime("%H:%M"),
         }
-    except Exception as e:
+    except Exception:
         return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -114,16 +110,16 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += f"📆 Bugungi sana: *{today}*\n"
 
         if prayers:
-            msg += "🕌 *Namoz vaqtlari (taxminiy hisob):*\n\n"
+            msg += "🕌 *Namoz vaqtlari (taxminiy):*\n\n"
             msg += f"🕌 *Bomdod*: {prayers['Fajr']}\n"
             msg += f"🌅 *Quyosh chiqishi*: {prayers['Sunrise']}\n"
             msg += f"🕌 *Peshin*: {prayers['Dhuhr']}\n"
             msg += f"🕌 *Asr*: {prayers['Asr']}\n"
             msg += f"🕌 *Shom*: {prayers['Maghrib']}\n"
             msg += f"🕌 *Xufton*: {prayers['Isha']}\n\n"
-            msg += "ℹ️ _Bu — soddalashtirilgan hisob. Aniq vaqt uchun mahalliy ilmiy markazlarga murojaat qiling._"
+            msg += "ℹ️ _Bu — astronomik taxmin. Aniq vaqt uchun mahalliy ramazon taqvimi bilan solishtiring._"
         else:
-            msg += "\n❌ Namoz vaqtlarini hisoblashda xatolik yuz berdi."
+            msg += "\n❌ Namoz vaqtlarini hisoblashda xatolik."
 
         await query.edit_message_text(msg, parse_mode="Markdown")
 
@@ -138,7 +134,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_button))
-    print("✅ Bot ishga tushdi! Railwayda ishlayapti...")
+    print("✅ Bot muvaffaqiyatli ishga tushdi!")
     app.run_polling()
 
 if __name__ == "__main__":

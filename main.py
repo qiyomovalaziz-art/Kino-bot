@@ -4,14 +4,15 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from astral import LocationInfo
 from astral.sun import sun
+import pytz
 
-# 🔑 Sizning bot tokeningiz (BU YERDA — xavfsizlik uchun Railwayda Environment Variable qilib sozlang!)
+# 🔑 Sizning bot tokeningiz (GitHubga ochiq qo'yish xavfli — Railwayda Environment Variable qiling yaxshiroq)
 BOT_TOKEN = "8363852555:AAHb5q3veKioUh2zNMV_9EEbgvoQqOMldIg"
 
-# 📅 Ramazon 2025 boshlanish sanasi (taxmin)
+# 📅 Ramazon 2025 boshlanish sanasi (astronomik taxmin)
 RAMADAN_2025 = "2025-02-28"
 
-# 🌍 Musulmon mamlakatlari (10 ta asosiy)
+# 🌍 10 ta asosiy musulmon mamlakat (ko'proq qo'shish mumkin)
 COUNTRIES = [
     {"name": "Saudi Arabia", "code": "SA", "flag": "🇸🇦", "city": "Mecca", "lat": 21.4225, "lon": 39.8262, "tz": "Asia/Riyadh"},
     {"name": "Uzbekistan", "code": "UZ", "flag": "🇺🇿", "city": "Tashkent", "lat": 41.2995, "lon": 69.2401, "tz": "Asia/Tashkent"},
@@ -31,36 +32,48 @@ def build_keyboard(page: int = 0):
     start = page * PAGE_SIZE
     end = start + PAGE_SIZE
     batch = COUNTRIES[start:end]
-    buttons = [
-        [InlineKeyboardButton(f"{c['flag']} {c['name']}", callback_data=f"country_{c['code']}")]
-        for c in batch
-    ]
+    buttons = []
+    for c in batch:
+        buttons.append([InlineKeyboardButton(f"{c['flag']} {c['name']}", callback_data=f"country_{c['code']}")])
+    
     nav_row = []
     if page > 0:
         nav_row.append(InlineKeyboardButton("⬅️ Oldingisi", callback_data=f"page_{page-1}"))
     if end < len(COUNTRIES):
         nav_row.append(InlineKeyboardButton("➡️ Keyingisi", callback_data=f"page_{page+1}"))
+    
     if nav_row:
         buttons.append(nav_row)
+    
     return InlineKeyboardMarkup(buttons)
 
 def calculate_prayer_times(lat, lon, tz_name):
     try:
-        city = LocationInfo(name="", region="", timezone=tz_name, latitude=lat, longitude=lon)
-        today = datetime.today().date()
-        s = sun(city.observer, date=today, tzinfo=city.timezone)
-
+        # Vaqt zonasini olish
+        tz = pytz.timezone(tz_name)
+        today = datetime.now(tz).date()
+        
+        # Astral Location
+        city = LocationInfo("Custom", "Region", tz_name, lat, lon)
+        
+        # Quyosh hodisalari
+        s = sun(city.observer, date=today, tzinfo=tz)
+        
         sunrise = s['sunrise']
         sunset = s['sunset']
         noon = s['noon']
-
-        # Namoz vaqtlari (soddalashtirilgan, lekin amaliy)
-        fajr = sunrise - timedelta(minutes=90)   # Bomdod: quyoshdan 1.5 soat oldin
-        dhuhr = noon                            # Peshin: tush
-        asr = noon + timedelta(hours=3)         # Asr: taxminan
-        maghrib = sunset                        # Shom: quyosh botganda
-        isha = sunset + timedelta(minutes=90)   # Xufton: quyoshdan 1.5 soat keyin
-
+        
+        # 🌙 Bomdod: Quyosh chiqishidan 1 soat oldin (soddalashtirilgan)
+        fajr = sunrise - timedelta(hours=1)
+        # 🌞 Peshin: Quyosh tepada
+        dhuhr = noon
+        # 🌤 Asr: Peshindan keyin ~3 soat (taxmin)
+        asr = noon + timedelta(hours=3)
+        # 🌆 Shom: Quyosh botganda
+        maghrib = sunset
+        # 🌃 Xufton: Shomdan 1.5 soat keyin
+        isha = sunset + timedelta(hours=1.5)
+        
         return {
             "Fajr": fajr.strftime("%H:%M"),
             "Sunrise": sunrise.strftime("%H:%M"),
@@ -70,13 +83,13 @@ def calculate_prayer_times(lat, lon, tz_name):
             "Isha": isha.strftime("%H:%M"),
         }
     except Exception as e:
-        raise RuntimeError(f"Hisoblash xatolik: {str(e)}")
+        return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🌙 *Assalomu alaykum!*\n\n"
+        "🌙 *Assalomu alaykum!* \n"
         "Quyidagi musulmon mamlakatlaridan birini tanlang. "
-        "Sizga **Ramazon 2025 sanasi** va **bugungi namoz vaqtlari** ko'rsatiladi.",
+        "Sizga Ramazon 2025 sanasi va bugungi namoz vaqtlari ko'rsatiladi.",
         parse_mode="Markdown",
         reply_markup=build_keyboard(page=0)
     )
@@ -93,24 +106,24 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❌ Mamlakat topilmadi.")
             return
 
-        try:
-            prayers = calculate_prayer_times(country["lat"], country["lon"], country["tz"])
-            today_str = datetime.now().strftime("%Y-%m-%d")
+        prayers = calculate_prayer_times(country["lat"], country["lon"], country["tz"])
+        today = datetime.now().strftime("%Y-%m-%d")
 
-            msg = f"🌙 *{country['name']}* ({country['city']})\n"
-            msg += f"📅 *Ramazon 2025 boshlanishi*: {RAMADAN_2025}\n\n"
-            msg += f"📆 *Bugungi sana*: {today_str}\n"
-            msg += "🕌 *Namoz vaqtlari (taxminiy):*\n\n"
+        msg = f"🌙 *{country['name']}* ({country['city']})\n"
+        msg += f"📅 Ramazon 2025 boshlanishi: *{RAMADAN_2025}*\n\n"
+        msg += f"📆 Bugungi sana: *{today}*\n"
+
+        if prayers:
+            msg += "🕌 *Namoz vaqtlari (taxminiy hisob):*\n\n"
             msg += f"🕌 *Bomdod*: {prayers['Fajr']}\n"
             msg += f"🌅 *Quyosh chiqishi*: {prayers['Sunrise']}\n"
             msg += f"🕌 *Peshin*: {prayers['Dhuhr']}\n"
             msg += f"🕌 *Asr*: {prayers['Asr']}\n"
             msg += f"🕌 *Shom*: {prayers['Maghrib']}\n"
             msg += f"🕌 *Xufton*: {prayers['Isha']}\n\n"
-            msg += "ℹ️ _Ma'lumotlar quyosh harakati asosida hisoblangan. Aniq vaqt uchun mahalliy masjid bilan tekshiring._"
-
-        except Exception as e:
-            msg = f"❌ Xatolik yuz berdi:\n`{str(e)}`"
+            msg += "ℹ️ _Bu — soddalashtirilgan hisob. Aniq vaqt uchun mahalliy ilmiy markazlarga murojaat qiling._"
+        else:
+            msg += "\n❌ Namoz vaqtlarini hisoblashda xatolik yuz berdi."
 
         await query.edit_message_text(msg, parse_mode="Markdown")
 

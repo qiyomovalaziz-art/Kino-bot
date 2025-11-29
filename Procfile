@@ -1,2 +1,2 @@
 # Railwayda botni ishga tushirish
-worker: python app.py
+worker: python main.py

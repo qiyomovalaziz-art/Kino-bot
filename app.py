@@ -4,7 +4,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 from dotenv import load_dotenv
 
 load_dotenv()
-BOT_TOKEN = os.getenv("8363852555:AAHb5q3veKioUh2zNMV_9EEbgvoQqOMldIg")
+BOT_TOKEN = ("8363852555:AAHb5q3veKioUh2zNMV_9EEbgvoQqOMldIg")
 
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN muhit o'zgaruvchisi sozlanmagan!")

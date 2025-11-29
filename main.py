@@ -10,7 +10,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # ==========================
 # 1. BOT TOKEN (O'ZINGIZNI QO'YING!)
 # ==========================
-BOT_TOKEN = "BU_YERGA_OZINGIZNING_BOT_TOKENINGIZNI_YOZING"
+BOT_TOKEN = "8581071094:AAF7qK3vVOn8YUJTrlc-JEGPX3SXw5wJMoA"
 
 # ==========================
 # 2. DAVLATLAR MA'LUMOTLARI (10 ta misol — istalgancha qo'shishingiz mumkin)

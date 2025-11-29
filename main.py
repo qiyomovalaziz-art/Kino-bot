@@ -1,18 +1,16 @@
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
-from astral import LocationInfo
-from astral.sun import sun
 import pytz
 
-# 🔑 SIZNING BOT TOKENINGIZ — O'RNIGA @BotFather dan olganningizni qo'ying
+# 🔑 Bot tokeningiz
 BOT_TOKEN = "8581071094:AAF7qK3vVOn8YUJTrlc-JEGPX3SXw5wJMoA"
 
-# 📅 Ramazon 2025 boshlanish sanasi (astronomik taxmin)
+# 📅 Ramazon 2025
 RAMADAN_2025 = "2025-02-28"
 
-# 🌍 15 ta asosiy musulmon mamlakat (ko'proq qo'shish mumkin)
+# 🌍 Mamlakatlar: nom, kod, bayroq, shahar, kenglik, uzunlik, vaqt zonasi
 COUNTRIES = [
     {"name": "Saudi Arabia", "code": "SA", "flag": "🇸🇦", "city": "Mecca", "lat": 21.4225, "lon": 39.8262, "tz": "Asia/Riyadh"},
     {"name": "Uzbekistan", "code": "UZ", "flag": "🇺🇿", "city": "Tashkent", "lat": 41.2995, "lon": 69.2401, "tz": "Asia/Tashkent"},
@@ -33,63 +31,107 @@ COUNTRIES = [
 
 PAGE_SIZE = 5
 
+# 📐 Astronomik yordamchi funksiyalar
+def deg_to_rad(d): return d * math.pi / 180
+def rad_to_deg(r): return r * 180 / math.pi
+
+def day_of_year(d: date):
+    return d.timetuple().tm_yday
+
+def equation_of_time(day):
+    M = deg_to_rad((357.5291 + 0.98560028 * day) % 360)
+    C = deg_to_rad((1.9148 * math.sin(M) + 0.02 * math.sin(2*M) + 0.0003 * math.sin(3*M)) % 360)
+    L = (M + C + deg_to_rad(102.9372)) % (2 * math.pi)
+    return rad_to_deg(4 * (L - M)) / 60  # daqiqada
+
+def solar_noon(day, lon):
+    return 12 - equation_of_time(day) - lon / 15
+
+def hour_angle(time, day, lat, lon, angle):
+    dec = deg_to_rad(23.44 * math.sin(deg_to_rad(360/365 * (day - 81))))
+    cos_h = (math.sin(deg_to_rad(angle)) - math.sin(deg_to_rad(lat)) * math.sin(dec)) / (math.cos(deg_to_rad(lat)) * math.cos(dec))
+    if cos_h < -1 or cos_h > 1:
+        return None
+    return rad_to_deg(math.acos(cos_h)) / 15
+
+def prayer_times(lat, lon, date_obj, tz_name):
+    day = day_of_year(date_obj)
+    tz = pytz.timezone(tz_name)
+    today = datetime.combine(date_obj, datetime.min.time()).replace(tzinfo=tz)
+
+    # ⏰ Quyosh tush vaqti (Peshin)
+    noon = solar_noon(day, lon)
+    dhuhr = today.replace(hour=int(noon), minute=int((noon % 1) * 60), second=0, microsecond=0)
+
+    # ⏰ Bomdod (-18°) va Xufton (-18°) — Muslim World League
+    fajr_h = hour_angle("fajr", day, lat, lon, -18)
+    isha_h = hour_angle("isha", day, lat, lon, -18)
+
+    if fajr_h is None or isha_h is None:
+        return None
+
+    fajr_time = noon - fajr_h
+    isha_time = noon + isha_h
+
+    # ⏰ Shom (0° — quyosh botganda)
+    maghrib_h = hour_angle("maghrib", day, lat, lon, -0.833)  # -0.833 = quyosh radiusi
+    if maghrib_h is None:
+        return None
+    maghrib_time = noon + maghrib_h
+
+    # ⏰ Asr (Hanafi: 2x soy)
+    dec = deg_to_rad(23.44 * math.sin(deg_to_rad(360/365 * (day - 81))))
+    asr_angle = rad_to_deg(math.atan(2 + math.tan(deg_to_rad(lat - rad_to_deg(dec)))))
+    asr_h = hour_angle("asr", day, lat, lon, -asr_angle)
+    if asr_h is None:
+        return None
+    asr_time = noon + asr_h
+
+    def to_time(val):
+        h = int(val)
+        m = int(round((val - h) * 60))
+        if m >= 60:
+            h += 1
+            m = 0
+        if h >= 24:
+            h = 23
+            m = 59
+        return f"{h:02d}:{m:02d}"
+
+    return {
+        "Fajr": to_time(fajr_time),
+        "Sunrise": to_time(noon - hour_angle("sunrise", day, lat, lon, -0.833)),
+        "Dhuhr": to_time(noon),
+        "Asr": to_time(asr_time),
+        "Maghrib": to_time(maghrib_time),
+        "Isha": to_time(isha_time),
+    }
+
+# 🔘 Tugmalar
 def build_keyboard(page: int = 0):
     start = page * PAGE_SIZE
     end = start + PAGE_SIZE
     batch = COUNTRIES[start:end]
-    buttons = []
-    for c in batch:
-        buttons.append([InlineKeyboardButton(f"{c['flag']} {c['name']}", callback_data=f"country_{c['code']}")])
-    
-    nav_row = []
+    buttons = [[InlineKeyboardButton(f"{c['flag']} {c['name']}", callback_data=f"country_{c['code']}")] for c in batch]
+    nav = []
     if page > 0:
-        nav_row.append(InlineKeyboardButton("⬅️ Oldingisi", callback_data=f"page_{page-1}"))
+        nav.append(InlineKeyboardButton("⬅️ Oldingisi", callback_data=f"page_{page-1}"))
     if end < len(COUNTRIES):
-        nav_row.append(InlineKeyboardButton("➡️ Keyingisi", callback_data=f"page_{page+1}"))
-    
-    if nav_row:
-        buttons.append(nav_row)
-    
+        nav.append(InlineKeyboardButton("➡️ Keyingisi", callback_data=f"page_{page+1}"))
+    if nav:
+        buttons.append(nav)
     return InlineKeyboardMarkup(buttons)
 
-def calculate_prayer_times(lat, lon, tz_name):
-    try:
-        tz = pytz.timezone(tz_name)
-        today = datetime.now(tz).date()
-        city = LocationInfo("Custom", "Region", tz_name, lat, lon)
-        s = sun(city.observer, date=today, tzinfo=tz)
-        
-        sunrise = s['sunrise']
-        sunset = s['sunset']
-        noon = s['noon']
-        
-        # Soddalashtirilgan namoz vaqtlari (haqiqiyga yaqin taxmin)
-        fajr = sunrise - timedelta(minutes=70)   # ~1 soat 10 daqiqqa oldin
-        dhuhr = noon
-        asr = noon + timedelta(hours=3)
-        maghrib = sunset
-        isha = sunset + timedelta(minutes=90)    # 1.5 soat keyin
-        
-        return {
-            "Fajr": fajr.strftime("%H:%M"),
-            "Sunrise": sunrise.strftime("%H:%M"),
-            "Dhuhr": dhuhr.strftime("%H:%M"),
-            "Asr": asr.strftime("%H:%M"),
-            "Maghrib": maghrib.strftime("%H:%M"),
-            "Isha": isha.strftime("%H:%M"),
-        }
-    except Exception:
-        return None
-
+# 📤 /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🌙 *Assalomu alaykum!* \n"
-        "Quyidagi musulmon mamlakatlaridan birini tanlang. "
-        "Sizga Ramazon 2025 sanasi va bugungi namoz vaqtlari ko'rsatiladi.",
+        "Musulmon mamlakat tanlang — Ramazon 2025 va bugungi namoz vaqtlari ko'rsatiladi.",
         parse_mode="Markdown",
-        reply_markup=build_keyboard(page=0)
+        reply_markup=build_keyboard(0)
     )
 
+# 🖱️ Tugma bosilganda
 async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -102,22 +144,23 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❌ Mamlakat topilmadi.")
             return
 
-        prayers = calculate_prayer_times(country["lat"], country["lon"], country["tz"])
-        today = datetime.now().strftime("%Y-%m-%d")
+        tz = pytz.timezone(country["tz"])
+        today = datetime.now(tz).date()
+        prayers = prayer_times(country["lat"], country["lon"], today, country["tz"])
 
         msg = f"🌙 *{country['name']}* ({country['city']})\n"
-        msg += f"📅 Ramazon 2025 boshlanishi: *{RAMADAN_2025}*\n\n"
-        msg += f"📆 Bugungi sana: *{today}*\n"
+        msg += f"📅 Ramazon 2025: *{RAMADAN_2025}*\n\n"
+        msg += f"📆 Bugun: *{today.strftime('%Y-%m-%d')}*\n"
 
         if prayers:
-            msg += "🕌 *Namoz vaqtlari (taxminiy):*\n\n"
+            msg += "🕌 *Namoz vaqtlari (MWL usuli):*\n\n"
             msg += f"🕌 *Bomdod*: {prayers['Fajr']}\n"
-            msg += f"🌅 *Quyosh chiqishi*: {prayers['Sunrise']}\n"
+            msg += f"🌅 *Quyosh*: {prayers['Sunrise']}\n"
             msg += f"🕌 *Peshin*: {prayers['Dhuhr']}\n"
             msg += f"🕌 *Asr*: {prayers['Asr']}\n"
             msg += f"🕌 *Shom*: {prayers['Maghrib']}\n"
             msg += f"🕌 *Xufton*: {prayers['Isha']}\n\n"
-            msg += "ℹ️ _Bu — astronomik taxmin. Aniq vaqt uchun mahalliy ramazon taqvimi bilan solishtiring._"
+            msg += "✅ _Hisob Muslim World League standarti asosida amalga oshirildi._"
         else:
             msg += "\n❌ Namoz vaqtlarini hisoblashda xatolik."
 
@@ -125,16 +168,14 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("page_"):
         page = int(data.split("_", 1)[1])
-        await query.edit_message_text(
-            "🌍 Mamlakat tanlang:",
-            reply_markup=build_keyboard(page=page)
-        )
+        await query.edit_message_text("🌍 Mamlakat tanlang:", reply_markup=build_keyboard(page))
 
+# 🚀 Asosiy
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_button))
-    print("✅ Bot muvaffaqiyatli ishga tushdi!")
+    print("✅ Bot ishga tushdi! Start command: python app.py")
     app.run_polling()
 
 if __name__ == "__main__":

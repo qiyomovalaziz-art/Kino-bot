@@ -1,147 +1,124 @@
-# bot.py — To'liq ishlaydigan Telegram bot: Har kuni yangi davlat
-
-import json
-import os
 import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+    ConversationHandler
+)
+import requests
 from datetime import datetime
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
 
-# ==========================
-# 1. BOT TOKEN (O'ZINGIZNI QO'YING!)
-# ==========================
-BOT_TOKEN = "8581071094:AAF7qK3vVOn8YUJTrlc-JEGPX3SXw5wJMoA"
+# Logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# ==========================
-# 2. DAVLATLAR MA'LUMOTLARI (10 ta misol — istalgancha qo'shishingiz mumkin)
-# ==========================
-COUNTRIES = [
-    {
-        "name": "O'zbekiston",
-        "flag": "🇺🇿",
-        "current_president": "Shavkat Mirziyoyev",
-        "president_since": "2016-12-14",
-        "previous_president": "Islam Karimov"
-    },
-    {
-        "name": "Qozog'iston",
-        "flag": "🇰🇿",
-        "current_president": "Qosim-Jomart Toqaev",
-        "president_since": "2019-03-20",
-        "previous_president": "Nursulton Nazarbayev"
-    },
-    {
-        "name": "Rossiya",
-        "flag": "🇷🇺",
-        "current_president": "Vladimir Putin",
-        "president_since": "2012-05-07",
-        "previous_president": "Dmitriy Medvedev"
-    },
-    {
-        "name": "AQSH",
-        "flag": "🇺🇸",
-        "current_president": "Joe Biden",
-        "president_since": "2021-01-20",
-        "previous_president": "Donald Trump"
-    },
-    {
-        "name": "Fransiya",
-        "flag": "🇫🇷",
-        "current_president": "Emmanuel Macron",
-        "president_since": "2017-05-14",
-        "previous_president": "François Hollande"
-    },
-    {
-        "name": "Xitoy",
-        "flag": "🇨🇳",
-        "current_president": "Si Szinping",
-        "president_since": "2013-03-15",
-        "previous_president": "Xu Czinzin"
-    },
-    {
-        "name": "Turkiya",
-        "flag": "🇹🇷",
-        "current_president": "Rejep Tayyip Erdo'gan",
-        "president_since": "2014-08-28",
-        "previous_president": "Abdullah Gul"
-    },
-    {
-        "name": "Yaponiya",
-        "flag": "🇯🇵",
-        "current_president": "Fumio Kishida",
-        "president_since": "2021-10-04",
-        "previous_president": "Yoshihide Suga"
-    },
-    {
-        "name": "Germaniya",
-        "flag": "🇩🇪",
-        "current_president": "Frank-Valter Shtaynmayer",
-        "president_since": "2017-03-19",
-        "previous_president": "Yoaxim Gauck"
-    },
-    {
-        "name": "Koreya Respublikasi",
-        "flag": "🇰🇷",
-        "current_president": "Yun Suk Yul",
-        "president_since": "2022-05-10",
-        "previous_president": "Moon Jae-in"
-    }
-]
+# Holatlar
+ASK_CITY = 1
 
-# ==========================
-# 3. HAR KUNGI DAVLATNI BOSHQARISH
-# ==========================
-STATE_FILE = "daily_country.json"
+# Namoz turlari uchun rakatlar
+NAMOZ_RAKATLAR = {
+    "Fajr": "2 sunnat",
+    "Dhuhr": "4 sunnat, 4 farz, 2 sunnat, 2 nafl",
+    "Asr": "4 sunnat, 4 farz",
+    "Maghrib": "3 farz, 2 sunnat, 2 nafl",
+    "Isha": "4 sunnat, 4 farz, 2 sunnat, 2 nafl, 3 vitr"
+}
 
-def get_todays_country():
-    today_str = datetime.now().strftime("%Y-%m-%d")
-
-    # Fayl mavjud bo'lsa, o'qish
-    if os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE, "r", encoding="utf-8") as f:
-                state = json.load(f)
-            if state.get("date") == today_str:
-                index = state["index"]
-                return COUNTRIES[index % len(COUNTRIES)]
-        except (json.JSONDecodeError, KeyError):
-            pass  # Agar fayl buzilgan bo'lsa, yangi yaratish
-
-    # Yangi kun — yangi indeks (takrorlanmas ketma-ketlik)
-    index = hash(today_str) % len(COUNTRIES)
-
-    # Saqlash
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump({"date": today_str, "index": index}, f, ensure_ascii=False)
-
-    return COUNTRIES[index]
-
-# ==========================
-# 4. TELEGRAM HANDLER
-# ==========================
+# /start komandasi
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    country = get_todays_country()
-    text = (
-        f"🌍 **Bugungi Davlat**: {country['flag']} {country['name']}\n\n"
-        f"👤 **Hozirgi Prezident**: {country['current_president']}\n"
-        f"📅 **Lavozimga kirgan**: {country['president_since']}\n"
-        f"⏪ **Oldingi Prezident**: {country['previous_president']}\n\n"
-        f"🤖 Har kuni 00:01 da yangi davlat tanlanadi!"
+    keyboard = [[InlineKeyboardButton("🕋 Namoz vaqtlarini ko'rsat", callback_data='show_prayer')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "Assalomu alaykum! 🌙\nNamoz vaqtlari, sanasi, sovat vaqtlari hamda har bir namozning necha rakat ekanligini bilish uchun tugmani bosing:",
+        reply_markup=reply_markup
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
 
-# ==========================
-# 5. BOTNI ISHGA TUSHIRISH
-# ==========================
+# Callback tugmalar
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == 'show_prayer':
+        await query.edit_message_text("Shahringizni yoki mamlakatingizni kiriting (masalan: Toshkent, Jidda, Istanbul):")
+        return ASK_CITY
+
+# Shahar nomini qabul qilish
+async def get_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    city = update.message.text.strip()
+    url = f"http://api.aladhan.com/v1/timingsByCity?city={city}&country=&method=2"
+
+    try:
+        response = requests.get(url, timeout=10)
+        data = response.json()
+
+        if data['code'] != 200 or 'data' not in data:
+            await update.message.reply_text("Kechirasiz, ushbu shahar topilmadi. Iltimos, to'g'ri shahar nomini kiriting.")
+            return ASK_CITY
+
+        timings = data['data']['timings']
+        date_info = data['data']['date']['gregorian']
+        hijri = data['data']['date']['hijri']
+
+        # Sana
+        greg_date = f"{date_info['day']} {date_info['month']['en']} {date_info['year']}"
+        hijri_date = f"{hijri['day']} {hijri['month']['en']} {hijri['year']} (Hijriy)"
+
+        # Iftorlik va Saharlik
+        saharlik = timings['Imsak']
+        iftorlik = timings['Maghrib']
+
+        # Ma'lumotlarni tuzish
+        message = (
+            f"📅 **Sana (Milodiy):** {greg_date}\n"
+            f"📅 **Sana (Hijriy):** {hijri_date}\n\n"
+            f"🕋 **Namoz vaqtlari:**\n"
+            f"🔹 **Bomdod (Fajr):** {timings['Fajr']} — {NAMOZ_RAKATLAR['Fajr']}\n"
+            f"🔹 **Peshin (Dhuhr):** {timings['Dhuhr']} — {NAMOZ_RAKATLAR['Dhuhr']}\n"
+            f"🔹 **Asr:** {timings['Asr']} — {NAMOZ_RAKATLAR['Asr']}\n"
+            f"🔹 **Shom (Maghrib):** {timings['Maghrib']} — {NAMOZ_RAKATLAR['Maghrib']}\n"
+            f"🔹 **Xufton (Isha):** {timings['Isha']} — {NAMOZ_RAKATLAR['Isha']}\n\n"
+            f"🌙 **Saharlik (Imsak):** {saharlik}\n"
+            f"🍽️ **Iftorlik:** {iftorlik}\n\n"
+            f"📍 **Shahar:** {city}"
+        )
+
+        await update.message.reply_text(message, parse_mode='Markdown')
+
+    except Exception as e:
+        logger.error(f"Xatolik: {e}")
+        await update.message.reply_text("Namoz vaqtlarini olishda xatolik yuz berdi. Iltimos, keyinroq qaytadan urinib ko'ring.")
+
+    return ConversationHandler.END
+
+# Bekor qilish
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Jarayon bekor qilindi.")
+    return ConversationHandler.END
+
+# Asosiy funksiya
 def main():
-    logging.basicConfig(
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        level=logging.INFO
+    # 🔑 Bu yerga o'zingizning bot tokeningizni qo'ying
+    TOKEN = "BU_YERGA_TOKENINGIZNI_QO'YING"
+
+    app = Application.builder().token(TOKEN).build()
+
+    conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(button_handler)],
+        states={
+            ASK_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_city)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+        per_chat=True
     )
-    app = Application.builder().token(BOT_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
-    print("✅ Bot ishga tushdi! Telegramda /start yuboring.")
+    app.add_handler(conv_handler)
+
+    print("Bot ishga tushdi...")
     app.run_polling()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

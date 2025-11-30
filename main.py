@@ -1,9 +1,10 @@
+import os
 import logging
 import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# Logging sozlamalari
+# Logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -24,7 +25,7 @@ ISLAMIC_COUNTRIES = [
     ("🇦🇪", "BAA", "Dubai"),
 ]
 
-# Namoz turlari uchun rakatlar
+# Namoz rakatlari
 NAMOZ_RAKATLAR = {
     "Fajr": "2 sunnat",
     "Dhuhr": "4 sunnat, 4 farz, 2 sunnat, 2 nafl",
@@ -33,7 +34,7 @@ NAMOZ_RAKATLAR = {
     "Isha": "4 sunnat, 4 farz, 2 sunnat, 2 nafl, 3 vitr"
 }
 
-# Asosiy menyuni yaratish
+# Menyu tugmalari
 def build_country_keyboard():
     buttons = []
     for i in range(0, len(ISLAMIC_COUNTRIES), 2):
@@ -46,7 +47,7 @@ def build_country_keyboard():
         buttons.append(row)
     return InlineKeyboardMarkup(buttons)
 
-# /start komandasi
+# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = build_country_keyboard()
     await update.message.reply_text(
@@ -54,7 +55,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=keyboard
     )
 
-# Namoz ma'lumotlarini olish
+# Namoz vaqtlarini olish
 def get_prayer_times(city):
     url = f"http://api.aladhan.com/v1/timingsByCity?city={city}&method=2"
     response = requests.get(url, timeout=10)
@@ -80,11 +81,10 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             index = int(query.data.split("_")[1])
             flag, country, city = ISLAMIC_COUNTRIES[index]
-        except (IndexError, ValueError, IndexError):
+        except (IndexError, ValueError):
             await query.edit_message_text("⚠️ Noto'g'ri tanlov.")
             return
 
-        # "Yuklanmoqda..." xabari
         await query.edit_message_text("⏳ Ma'lumot yuklanmoqda... Iltimos, kuting.")
 
         try:
@@ -110,7 +110,6 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🍽️ **Iftorlik:** {timings['Maghrib']}"
             )
 
-            # Tugmalar: "🔄 Yangilash" va "⬅️ Orqaga"
             refresh_button = InlineKeyboardButton("🔄 Yangilash", callback_data=f"prayer_{index}")
             back_button = InlineKeyboardButton("⬅️ Orqaga", callback_data="back_to_menu")
             reply_markup = InlineKeyboardMarkup([[refresh_button, back_button]])
@@ -118,23 +117,24 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=reply_markup)
 
         except Exception as e:
-            logger.error(f"API xatosi: {e}")
+            logger.error(f"Xatolik: {e}")
             await query.edit_message_text(
                 "❌ Namoz vaqtlarini olishda xatolik yuz berdi.\n\n"
-                "Iltimos, keyinroq qaytadan urinib ko'ring yoki boshqa mamlakatni tanlang:",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Bosh sahifaga qaytish", callback_data="back_to_menu")]])
+                "Iltimos, keyinroq qaytadan urinib ko'ring:",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🏠 Bosh sahifaga qaytish", callback_data="back_to_menu")]
+                ])
             )
 
-# Asosiy dastur
+# Asosiy funksiya
 def main():
-    TOKEN = "8581071094:AAF7qK3vVOn8YUJTrlc-JEGPX3SXw5wJMoA"
-
+    TOKEN = os.environ["TOKEN"]  # Railwaydan oladi
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_button))
 
-    print("✅ Bot muvaffaqiyatli ishga tushdi! Telegramda /start buyrug'ini yuboring.")
+    logger.info("✅ Bot ishga tushdi!")
     app.run_polling()
 
 if __name__ == "__main__":

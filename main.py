@@ -128,7 +128,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Asosiy funksiya
 def main():
-    TOKEN = os.environ["TOKEN"]  # Railwaydan oladi
+    TOKEN = ["8581071094:AAF7qK3vVOn8YUJTrlc-JEGPX3SXw5wJMoA"]  # Railwaydan oladi
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))

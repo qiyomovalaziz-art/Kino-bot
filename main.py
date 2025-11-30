@@ -5,42 +5,27 @@ import urllib.parse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# Logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Mamlakatlar: (bayroq, ko'rsatiladigan nom, shahar)
+# Mamlakatlar: (bayroq, ko'rsatiladigan nom, API uchun shahar nomi)
 ISLAMIC_COUNTRIES = [
     ("🇸🇦", "Saudiya Arabistoni", "Riyadh"),
-    ("🇵🇰", "Pakistan", "Islamabad"),
+    ("🇵🇰", "Pakistan", "Karachi"),
     ("🇮🇩", "Indoneziya", "Jakarta"),
     ("🇹🇷", "Turkiya", "Istanbul"),
     ("🇪🇬", "Misr", "Cairo"),
     ("🇺🇿", "O'zbekiston", "Tashkent"),
-    ("🇲🇦", "Marokash", "Rabat"),
+    ("🇲🇦", "Marokash", "Casablanca"),
     ("🇮🇷", "Eron", "Tehran"),
     ("🇧🇩", "Bangladesh", "Dhaka"),
     ("🇦🇪", "BAA", "Dubai"),
 ]
 
-# Shahar → Mamlakat kodi
-COUNTRY_CODES = {
-    "Riyadh": "SA",
-    "Islamabad": "PK",
-    "Jakarta": "ID",
-    "Istanbul": "TR",
-    "Cairo": "EG",
-    "Tashkent": "UZ",
-    "Rabat": "MA",
-    "Tehran": "IR",
-    "Dhaka": "BD",
-    "Dubai": "AE",
-}
-
-# Namoz rakatlari
+# Namoz rakatlari (o'zgarmaydi)
 NAMOZ_RAKATLAR = {
     "Fajr": "2 sunnat",
     "Dhuhr": "4 sunnat, 4 farz, 2 sunnat, 2 nafl",
@@ -49,7 +34,6 @@ NAMOZ_RAKATLAR = {
     "Isha": "4 sunnat, 4 farz, 2 sunnat, 2 nafl, 3 vitr"
 }
 
-# Menyu tugmalari
 def build_country_keyboard():
     buttons = []
     for i in range(0, len(ISLAMIC_COUNTRIES), 2):
@@ -62,25 +46,56 @@ def build_country_keyboard():
         buttons.append(row)
     return InlineKeyboardMarkup(buttons)
 
-# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🌙 Assalomu alaykum! Quyidagi islom mamlakatlaridan birini tanlang:",
         reply_markup=build_country_keyboard()
     )
 
-# Namoz vaqtlarini olish (to'g'ri URL kodlangan)
-def get_prayer_times(city):
-    country_code = COUNTRY_CODES.get(city, "")
+# YANGI: Yangi API orqali namoz vaqtlarini olish
+def get_prayer_times_new(city):
+    # Shahar nomini URLga mos qilish
     encoded_city = urllib.parse.quote(city)
-    url = f"http://api.aladhan.com/v1/timingsByCity?city={encoded_city}&country={country_code}&method=2"
-    response = requests.get(url, timeout=12)
+    url = f"https://islamic-api.vercel.app/api/jadwalSholat?daerah={encoded_city}"
+    response = requests.get(url, timeout=10)
     data = response.json()
-    if data.get("code") != 200:
-        raise Exception(f"API xatosi: {data.get('status', 'Noma\'lum')}")
-    return data["data"]
+    
+    if not data.get("status"):
+        raise Exception("Shahar topilmadi")
+    
+    jadwal = data["data"]
+    # Sana (bugungi)
+    from datetime import datetime
+    today = datetime.now()
+    greg_date = today.strftime("%d %B %Y")
+    hijri_date = "Hijriy sana API tomonidan qo'llab-quvvatlanmaydi"
+    
+    # Namoz vaqtlarini moslashtirish
+    timings = {
+        "Fajr": jadwal["subuh"],      # Subuh = Fajr
+        "Dhuhr": jadwal["dzuhur"],
+        "Asr": jadwal["ashar"],
+        "Maghrib": jadwal["maghrib"],
+        "Isha": jadwal["isya"],
+        "Imsak": jadwal["imsak"]
+    }
+    
+    return {
+        "timings": timings,
+        "date": {
+            "gregorian": {
+                "day": today.strftime("%d"),
+                "month": {"en": today.strftime("%B")},
+                "year": today.strftime("%Y")
+            },
+            "hijri": {
+                "day": "?",
+                "month": {"en": "?"},
+                "year": "?"
+            }
+        }
+    }
 
-# Tugma bosilganda
 async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -103,15 +118,15 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("⏳ Ma'lumot yuklanmoqda... Iltimos, kuting.")
 
         try:
-            prayer_data = get_prayer_times(city)
+            prayer_data = get_prayer_times_new(city)
             t = prayer_data["timings"]
             g = prayer_data["date"]["gregorian"]
-            h = prayer_data["date"]["hijri"]
+            h_day = prayer_data["date"]["hijri"]["day"]
 
             msg = (
                 f"📍 **{flag} {country}** ({city})\n\n"
                 f"📅 **Sana (Milodiy):** {g['day']} {g['month']['en']} {g['year']}\n"
-                f"📅 **Sana (Hijriy):** {h['day']} {h['month']['en']} {h['year']} (Hijriy)\n\n"
+                f"📅 **Sana (Hijriy):** —\n\n"
                 f"🕋 **Namoz vaqtlari:**\n"
                 f"🔹 **Bomdod (Fajr):** {t['Fajr']} — {NAMOZ_RAKATLAR['Fajr']}\n"
                 f"🔹 **Peshin (Dhuhr):** {t['Dhuhr']} — {NAMOZ_RAKATLAR['Dhuhr']}\n"
@@ -127,7 +142,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[refresh, back]]))
 
         except Exception as e:
-            logger.error(f"Namoz vaqti xatosi: {e}")
+            logger.error(f"Yangi API xatosi: {e}")
             await query.edit_message_text(
                 "❌ Namoz vaqtlarini olishda xatolik yuz berdi.\n\n"
                 "Iltimos, keyinroq qaytadan urinib ko'ring.",
@@ -137,9 +152,8 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ])
             )
 
-# Asosiy ishga tushirish
 def main():
-    TOKEN = os.environ["TOKEN"]  # Railwaydan olinadi
+    TOKEN = os.environ["TOKEN"]
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_button))

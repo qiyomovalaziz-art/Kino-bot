@@ -1,11 +1,9 @@
 import os
 import logging
-import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 ISLAMIC_COUNTRIES = [
     ("🇸🇦", "Saudiya Arabistoni", "Riyadh"),
@@ -46,16 +44,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=build_country_keyboard()
     )
 
-def get_prayer_times(city):
-    url = f"https://api.pray.zone/v2/times/today.json?city={city}"
-    response = requests.get(url, timeout=10)
-    if response.status_code != 200:
-        raise Exception("API javob bermadi")
-    data = response.json()
-    if data.get("code") != 200:
-        raise Exception("Shahar topilmadi")
-    return data["data"]
-
 async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -75,42 +63,23 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("⚠️ Xatolik yuz berdi.")
             return
 
-        await query.edit_message_text("⏳ Ma'lumot yuklanmoqda...")
+        # ⚠️ VAQTINCHALIK NAMUNA MA'LUMOT (API ishlamaguncha)
+        msg = (
+            f"📍 **{flag} {country}** ({city})\n\n"
+            f"📅 **Sana:** 30 November 2025\n\n"
+            f"🕋 **Namoz vaqtlari:**\n"
+            f"🔹 **Bomdod (Fajr):** 05:30 — {NAMOZ_RAKATLAR['Fajr']}\n"
+            f"🔹 **Peshin (Dhuhr):** 12:45 — {NAMOZ_RAKATLAR['Dhuhr']}\n"
+            f"🔹 **Asr:** 15:20 — {NAMOZ_RAKATLAR['Asr']}\n"
+            f"🔹 **Shom (Maghrib):** 17:50 — {NAMOZ_RAKATLAR['Maghrib']}\n"
+            f"🔹 **Xufton (Isha):** 19:10 — {NAMOZ_RAKATLAR['Isha']}\n\n"
+            f"🌙 **Saharlik (Imsak):** 05:15\n"
+            f"🍽️ **Iftorlik:** 17:50"
+        )
 
-        try:
-            prayer_data = get_prayer_times(city)
-            timings = prayer_data["timings"]
-            greg = prayer_data["date"]["gregorian"]
-            hijri = prayer_data["date"]["hijri"]
-
-            msg = (
-                f"📍 **{flag} {country}** ({city})\n\n"
-                f"📅 **Sana (Milodiy):** {greg}\n"
-                f"📅 **Sana (Hijriy):** {hijri}\n\n"
-                f"🕋 **Namoz vaqtlari:**\n"
-                f"🔹 **Bomdod (Fajr):** {timings['Fajr']} — {NAMOZ_RAKATLAR['Fajr']}\n"
-                f"🔹 **Peshin (Dhuhr):** {timings['Dhuhr']} — {NAMOZ_RAKATLAR['Dhuhr']}\n"
-                f"🔹 **Asr:** {timings['Asr']} — {NAMOZ_RAKATLAR['Asr']}\n"
-                f"🔹 **Shom (Maghrib):** {timings['Maghrib']} — {NAMOZ_RAKATLAR['Maghrib']}\n"
-                f"🔹 **Xufton (Isha):** {timings['Isha']} — {NAMOZ_RAKATLAR['Isha']}\n\n"
-                f"🌙 **Saharlik (Imsak):** {timings.get('Imsak', '—')}\n"
-                f"🍽️ **Iftorlik:** {timings['Maghrib']}"
-            )
-
-            refresh = InlineKeyboardButton("🔄 Yangilash", callback_data=query.data)
-            back = InlineKeyboardButton("⬅️ Orqaga", callback_data="back_to_menu")
-            await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[refresh, back]]))
-
-        except Exception as e:
-            logger.error(f"Xato: {e}")
-            await query.edit_message_text(
-                "❌ Namoz vaqtlarini olishda xatolik yuz berdi.\n\n"
-                "Iltimos, keyinroq qaytadan urinib ko'ring.",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔄 Qayta urinish", callback_data=query.data)],
-                    [InlineKeyboardButton("🏠 Bosh menyu", callback_data="back_to_menu")]
-                ])
-            )
+        refresh = InlineKeyboardButton("🔄 Yangilash", callback_data=query.data)
+        back = InlineKeyboardButton("⬅️ Orqaga", callback_data="back_to_menu")
+        await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[refresh, back]]))
 
 def main():
     app = Application.builder().token(os.environ["TOKEN"]).build()
